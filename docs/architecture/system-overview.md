@@ -1,6 +1,6 @@
 # System Architecture Overview
 
-Tesira2MQTT is a bidirectional MQTT bridge for Biamp Tesira DSPs. It subscribes to the level and mute controls listed in the configuration, publishes their state (and Home Assistant discovery messages) to MQTT, and applies commands received on MQTT back to the Tesira.
+Tesira2MQTT is a bidirectional MQTT bridge for Biamp Tesira DSPs. It subscribes to the level, mute and delay controls listed in the configuration, publishes their state (and Home Assistant discovery messages) to MQTT, and applies commands received on MQTT back to the Tesira.
 
 ## High-Level Architecture
 

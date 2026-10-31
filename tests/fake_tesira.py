@@ -46,6 +46,10 @@ class Block:
     level: float = -10.0
     min_level: float = -100.0
     max_level: float = 12.0
+    delay: float = 0.0
+    max_delay: float = 5.0  # seconds, while delay is in milliseconds
+    input_mute: bool = False
+    output_mute: bool = False
 
     def get(self, attribute: str) -> Any:
         return {
@@ -53,12 +57,22 @@ class Block:
             "level": self.level,
             "minLevel": self.min_level,
             "maxLevel": self.max_level,
+            "delay": self.delay,
+            "maxDelay": self.max_delay,
+            "inputMute": self.input_mute,
+            "outputMute": self.output_mute,
         }[attribute]
 
     def set(self, attribute: str, raw: str) -> Any:
         if attribute == "mute":
             self.mute = raw.lower() == "true"
             return self.mute
+        if attribute == "inputMute":
+            self.input_mute = raw.lower() == "true"
+            return self.input_mute
+        if attribute == "outputMute":
+            self.output_mute = raw.lower() == "true"
+            return self.output_mute
         if attribute == "level":
             self.level = float(raw)
             return self.level
@@ -214,11 +228,15 @@ class Session:
                     f'+OK "value":{_format_value(block.get(attribute))}'
                 )
             elif verb == "set":
-                value = block.set(attribute, parts[4])
+                value = block.set(attribute, parts[-1])
                 await self.send_line("+OK")
                 await server.notify(tag, attribute, value)
+            elif verb in ("set", "subscribe") and attribute == "delay":
+                await self.send_line(
+                    f"-ERR operation {verb} not supported on attribute: delay"
+                )
             elif verb == "subscribe":
-                label = parts[4]
+                label = parts[-1]
                 if label in self.subscriptions:
                     await self.send_line("-ERR ALREADY_SUBSCRIBED")
                     return
@@ -233,7 +251,7 @@ class Session:
                     await self.send_line("+OK")
                 await self.send_line("")
             elif verb == "unsubscribe":
-                self.subscriptions.pop(parts[4], None)
+                self.subscriptions.pop(parts[-1], None)
                 await self.send_line("+OK")
             else:
                 await self.send_line(f"-ERR '{verb}' is not supported")

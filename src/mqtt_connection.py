@@ -248,7 +248,8 @@ class MqttConnection:
         """Subscribe to the command topic and publish the discovery message."""
         identifier: str = data["identifier"]
         topic_command = f"{self._base_topic}/{identifier}/set"
-        await client.subscribe(topic_command)
+        if not data["read_only"]:
+            await client.subscribe(topic_command)
 
         payload: dict[str, Any] = {
             "dev": {
@@ -268,22 +269,26 @@ class MqttConnection:
             "state_topic": topic_state,
             "unique_id": data["unique_id"],
             "value_template": "{{ value_json }}",
-            "command_topic": topic_command,
         }
+        if not data["read_only"]:
+            payload["command_topic"] = topic_command
 
         match data["variable_type"]:
             case "bool":
                 ha_type = "switch"
                 payload["payload_on"] = True
                 payload["payload_off"] = False
+            case "float" if data["read_only"]:
+                ha_type = "sensor"
+                payload["unit_of_measurement"] = data["unit"]
             case "float":
                 ha_type = "number"
                 payload.update(
                     {
                         "max": data["max_level"],
                         "min": data["min_level"],
-                        "step": 0.1,
-                        "unit_of_measurement": "dB",
+                        "step": data["step"],
+                        "unit_of_measurement": data["unit"],
                     }
                 )
             case _:

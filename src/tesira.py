@@ -19,11 +19,11 @@ from errors import (
     ClientResponseError,
     ClientTimeoutError,
 )
-from models import subscription_identifier
+from models import ATTRIBUTES, subscription_identifier
 from telnet import BiampTesiraTelnetConnection
 
 if TYPE_CHECKING:
-    from models import Subscription, TesiraConfig
+    from models import AttributeSpec, Subscription, TesiraConfig
     from mqtt_connection import MqttConnection
 
 _LOGGER = logging.getLogger(__name__)
@@ -102,6 +102,11 @@ def _format_level(number: float, minimum: float, maximum: float) -> str:
     # repr() is the shortest string that parses back to exactly ``number``;
     # Decimal writes it without an exponent.
     return format(Decimal(repr(number)), "f")
+
+
+def _attribute_args(attribute: str, index: int, spec: AttributeSpec) -> str:
+    """Return the attribute and, when ``spec`` says it takes one, its index."""
+    return f"{attribute} {index}" if spec.indexed else attribute
 
 
 def _command_value(entry: dict[str, Any], value: str) -> str:
@@ -476,18 +481,29 @@ class BiampTesiraConnection:
             msg = f"Key: {key} does not match any subscriptions"
             raise ClientError(msg)
 
+        attribute = entry["attribute"]
+        spec = ATTRIBUTES[attribute]
+        if spec.read_only:
+            msg = f"{attribute} is read-only"
+            raise ClientError(msg)
+
         normalized = _command_value(entry, value)
         tag = _quote_tag(entry["instance_tag"])
-        await self.command(
-            f"{tag} set {entry['attribute']} {entry['index']} {normalized}"
-        )
+        target = _attribute_args(attribute, entry["index"], spec)
+        await self.command(f"{tag} set {target} {normalized}")
 
     async def get_min_max_levels(self, subscription: Subscription) -> dict[str, float]:
         """Get the min and max levels of a level control block."""
+        spec = ATTRIBUTES[subscription.attribute]
         levels: dict[str, float] = {}
-        for key, attribute in (("min_level", "minLevel"), ("max_level", "maxLevel")):
+        for key, attribute in (
+            ("min_level", spec.min_attribute),
+            ("max_level", spec.max_attribute),
+        ):
             tag = _quote_tag(subscription.instance_tag)
-            raw = await self.command(f"{tag} get {attribute} {subscription.index}")
+            raw = await self.command(
+                f"{tag} get {_attribute_args(str(attribute), subscription.index, spec)}"
+            )
             try:
                 levels[key] = _TYPE_ADAPTERS["float"].validate_python(raw)
             except ValidationError as err:
@@ -526,10 +542,22 @@ class BiampTesiraConnection:
             )
 
         tag = _quote_tag(subscription.instance_tag)
-        command = (
-            f"{tag} subscribe {subscription.attribute} "
-            f"{subscription.index} {identifier}"
+        spec = ATTRIBUTES[subscription.attribute]
+        attribute_args = _attribute_args(
+            subscription.attribute, subscription.index, spec
         )
+        if spec.read_only:
+            # Refreshed every resubscription_time, like a subscription's value.
+            try:
+                value = await self.command(f"{tag} get {attribute_args}")
+            except ClientError:
+                if is_new:
+                    self._subscriptions.pop(identifier, None)
+                raise
+            await self._apply_state(identifier, value or "")
+            return
+
+        command = f"{tag} subscribe {attribute_args} {identifier}"
         try:
             response = await self._request(self._subscription_channel, command)
             if response.startswith(_ERR_PREFIX):
@@ -546,24 +574,20 @@ class BiampTesiraConnection:
 
         if self._subscriptions[identifier]["state"] is None:
             # No initial publishToken (already subscribed): fetch the value.
-            value = await self.command(
-                f"{tag} get {subscription.attribute} {subscription.index}"
-            )
+            value = await self.command(f"{tag} get {attribute_args}")
             await self._apply_state(identifier, value or "")
 
     async def _build_entry(
         self, subscription: Subscription, identifier: str
     ) -> dict[str, Any]:
         """Build the state-store entry for a subscription."""
-        other_items: dict[str, float] = {}
-        match subscription.attribute:
-            case "mute":
-                variable_type = "bool"
-            case "level":
-                variable_type = "float"
-                other_items = await self.get_min_max_levels(subscription)
-            case _:
-                variable_type = "str"
+        spec = ATTRIBUTES[subscription.attribute]
+        variable_type = spec.variable_type
+        other_items: dict[str, Any] = {}
+        if variable_type == "float":
+            other_items = {"unit": spec.unit, "step": spec.step}
+            if not spec.read_only:
+                other_items.update(await self.get_min_max_levels(subscription))
 
         return {
             "instance_tag": subscription.instance_tag,
@@ -579,6 +603,7 @@ class BiampTesiraConnection:
             "name": subscription.name,
             "device_name": subscription.device_name,
             "identifier": identifier,
+            "read_only": spec.read_only,
             **other_items,
         }
 

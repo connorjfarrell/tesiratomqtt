@@ -193,10 +193,22 @@ Defines which Tesira device attributes to monitor and control. Each subscription
 | Field | Type | Required | Description | Example |
 |-------|------|----------|-------------|---------|
 | `instance_tag` | `string` | Yes | Tesira device instance tag | `OfficeSpeakersPCLevel` |
-| `attribute` | `string` | Yes | Attribute type (`level` or `mute`) | `level` |
+| `attribute` | `string` | Yes | Attribute type (see [Attributes](#attributes)) | `level` |
 | `index` | `integer` | Yes | Device index (usually 1) | `1` |
 | `name` | `string` | Yes | Display name for the attribute | `Level` |
 | `device_name` | `string` | Yes | Device name for grouping | `Office Speakers PC` |
+
+#### Attributes
+
+| Attribute | Entity | Index | Used on |
+|-----------|--------|-------|---------|
+| `level` | number (dB) | channel | Level Control blocks |
+| `mute` | switch | channel | Level Control / Mute Control blocks |
+| `inputMute` | switch | input channel | Mixers |
+| `outputMute` | switch | not used | Mixers |
+| `delay` | read-only sensor (ms) | not used | Audio Delay blocks |
+
+The Tesira allows neither setting nor subscribing to `delay`, so it is published as a read-only sensor that is read every `resubscription_time` seconds.
 
 #### Example
 
@@ -222,8 +234,8 @@ subscriptions:
 #### Validation Rules
 
 - `instance_tag`: Must be a non-empty string that matches the Tesira device configuration. It must not contain `"`, `/`, `&`, `+`, `#`, control characters (including tab) or line breaks. Spaces and other characters are allowed; tags with whitespace are quoted when sent to the Tesira, and tags outside `A-Z`, `a-z`, `0-9`, `_`, `-` get an encoded MQTT identifier (see [Identifiers](../architecture/system-overview.md#identifiers))
-- `attribute`: Must be exactly `level` or `mute`
-- `index`: Must be positive integer (typically 1)
+- `attribute`: Must be one of the [attributes](#attributes) below
+- `index`: Must be positive integer (typically 1); ignored for attributes that take no index
 - `name`: Must be non-empty string, used for display purposes
 - `device_name`: Must be non-empty string, used for device grouping
 

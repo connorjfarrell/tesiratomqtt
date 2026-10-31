@@ -11,6 +11,7 @@ Tesira2MQTT is a powerful MQTT bridge application that enables seamless control 
 - **Bidirectional MQTT Communication**: Control and monitor Biamp Tesira DSPs via MQTT
 - **Home Assistant Integration**: Automatic discovery and entity configuration
 - **Level Control**: Adjust audio levels for various input/output channels
+- **Mute and Delay**: Mute inputs, outputs and mixer inputs, and read audio delay in milliseconds
 - **Mute Control**: Enable/disable mute functionality for audio channels
 - **Real-time Monitoring**: Subscribe to device state changes and publish updates
 - **Resilient**: Reconnects to the Tesira and the MQTT broker independently; a broker redeploy does not restart the app or disturb the Tesira

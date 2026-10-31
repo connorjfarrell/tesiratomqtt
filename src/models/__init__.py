@@ -1,6 +1,7 @@
 """Datamodels used by Tesira2MQTT."""
 
 import re
+from dataclasses import dataclass
 from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -18,8 +19,8 @@ def subscription_identifier(instance_tag: str, attribute: str, index: int) -> st
 
     A ``[A-Za-z0-9_-]+`` tag gives ``<tag>_<attribute>_<index>``, as in earlier
     releases. Any other tag gives ``<attribute>_<index>__<hex of the tag>``.
-    Tag-first ids always end in ``e_<index>`` (``mute`` and ``level`` end in
-    ``e``), while in an encoded id the last ``_`` follows another ``_``. So an
+    In a tag-first id the last ``_`` follows the final letter of the attribute
+    (never ``_``), while in an encoded id it follows another ``_``. So an
     encoded id never equals a current or earlier tag-first id, and cleaning up
     an earlier id can never touch a live one.
     """
@@ -31,6 +32,39 @@ def subscription_identifier(instance_tag: str, attribute: str, index: int) -> st
         msg = f"instance tag {instance_tag!r} is not valid Unicode"
         raise ValueError(msg) from err
     return f"{attribute}_{index}__{encoded.hex()}"
+
+
+@dataclass(frozen=True)
+class AttributeSpec:
+    """How a supported Tesira attribute is addressed and typed."""
+
+    variable_type: Literal["bool", "float"]
+    indexed: bool = True
+    # The Tesira rejects set and subscribe on these, so the value is polled and
+    # published as a sensor.
+    read_only: bool = False
+    unit: str | None = None
+    step: float | None = None
+    # Float attributes only: the attributes holding the bounds.
+    min_attribute: str | None = None
+    max_attribute: str | None = None
+
+
+ATTRIBUTES: dict[str, AttributeSpec] = {
+    "level": AttributeSpec(
+        "float",
+        unit="dB",
+        step=0.1,
+        min_attribute="minLevel",
+        max_attribute="maxLevel",
+    ),
+    "mute": AttributeSpec("bool"),
+    # Mixer input channels are addressed by index.
+    "inputMute": AttributeSpec("bool"),
+    # Mixer output and delay blocks have a single value and take no index.
+    "outputMute": AttributeSpec("bool", indexed=False),
+    "delay": AttributeSpec("float", indexed=False, read_only=True, unit="ms"),
+}
 
 
 class MqttConfig(BaseModel):
@@ -59,7 +93,7 @@ class Subscription(BaseModel):
     """A datamodel representing the subscription config in config.yaml."""
 
     instance_tag: str
-    attribute: Literal["mute", "level"]
+    attribute: Literal["mute", "level", "inputMute", "outputMute", "delay"]
     index: int
     name: str
     device_name: str

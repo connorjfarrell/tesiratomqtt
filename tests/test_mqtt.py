@@ -31,9 +31,12 @@ def entry(identifier: str = "Mic1_mute_1", state: Any = False) -> dict[str, Any]
         "name": attribute.title(),
         "device_name": tag,
         "identifier": identifier,
+        "read_only": attribute == "delay",
     }
     if attribute == "level":
-        data.update(min_level=-100.0, max_level=12.0)
+        data.update(min_level=-100.0, max_level=12.0, unit="dB", step=0.1)
+    if attribute == "delay":
+        data.update(unit="ms", step=None)
     return data
 
 
@@ -244,6 +247,19 @@ async def test_level_discovery_is_a_number(
         assert config["min"] == -100.0
         assert config["max"] == 12.0
         assert config["unit_of_measurement"] == "dB"
+
+
+async def test_read_only_value_is_a_sensor_without_a_command_topic(
+    mqtt_conn: MqttConnection, broker: FakeBroker, handler: Handler
+) -> None:
+    async with running(mqtt_conn.run(handler)):
+        await mqtt_conn.wait_connected()
+        await mqtt_conn.publish_state("Delay", entry("Dly_delay_1", 5.634), SERIAL)
+        config = broker.on(f"homeassistant/sensor/{SERIAL}_Dly_delay_1/config")[0]
+        assert config["unit_of_measurement"] == "ms"
+        assert "command_topic" not in config
+        assert broker.current is not None
+        assert "t2m/Dly_delay_1/set" not in broker.current.subscriptions
 
 
 async def test_publish_before_connect_is_not_stored_for_replay(
